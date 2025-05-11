@@ -1,68 +1,38 @@
 import os
+import sqlite3
 
-import orjson
-from langgraph.checkpoint.serde.base import SerializerProtocol
-from langgraph.checkpoint.serde.types import SendProtocol
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import yfinance as yf
 from langchain_core.tracers import langchain
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from scipy.signal import argrelextrema
-import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import uuid
 
 from typing import Annotated
 from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage, HumanMessage
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 import google.generativeai as genai
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
 from datetime import datetime
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# # Custom DataFrame serializer
-# class DataFrameSerializer(SerializerProtocol):
-#     def dumps(self, obj: pd.DataFrame) -> bytes:
-#         return orjson.dumps({
-#             "data": obj.to_dict(orient="list"),
-#             "columns": obj.columns.tolist(),
-#             "index": obj.index.astype(str).tolist()
-#         })
-#
-#     def loads(self, data: bytes) -> pd.DataFrame:
-#         obj = orjson.loads(data)
-#         return pd.DataFrame(
-#             data=obj["data"],
-#             columns=obj["columns"],
-#             index=pd.DatetimeIndex(obj["index"])
-#         )
-#
-#     # Required typed methods
-#     def dumps_typed(self, obj: any) -> tuple[str, bytes]:
-#         if isinstance(obj, pd.DataFrame):
-#             return ("dataframe", self.dumps(obj))
-#         return ("json", orjson.dumps(obj))
-#
-#     def loads_typed(self, type_id: str, data: bytes) -> any:
-#         if type_id == "dataframe":
-#             return self.loads(data)
-#         return orjson.loads(data)
-
-
-# # Enhanced SQLite Saver with DataFrame support
-# class CustomSqliteSaver(SqliteSaver):
-#     def __init__(self, conn: sqlite3.Connection):
-#         super().__init__(conn, serde=DataFrameSerializer())
-
+# Global in-memory database
+memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
+cursor = memory_conn.cursor()
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS interactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT,
+        prompt TEXT,
+        response TEXT
+    )
+''')
+memory_conn.commit()
 
 # --- Persona mapping for all nodes ---
 NODE_PERSONAS = {
@@ -108,22 +78,12 @@ class State(TypedDict):
 llm = genai.GenerativeModel("gemini-1.5-pro")
 
 def save_interaction(prompt, response):
-    conn = sqlite3.connect("memory.sqlite")
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS interactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            prompt TEXT,
-            response TEXT
-        )
-    ''')
+    cursor = memory_conn.cursor()
     cursor.execute('''
         INSERT INTO interactions (timestamp, prompt, response)
         VALUES (?, ?, ?)
     ''', (datetime.now().isoformat(), prompt, response))
-    conn.commit()
-    conn.close()
+    memory_conn.commit()
 
 def log_trace(state, step_name, notes=None):
     state["trace"] = state.get("trace", [])
@@ -142,22 +102,24 @@ def extract_stock_symbol(user_input: str) -> str:
     response = llm.generate_content(prompt).text.strip().upper()
     return response if response != "FOLLOWUP" else "FOLLOWUP"
 
-# API Node with serializable DataFrame
 def api_node(state):
     symbol = state["symbol"]
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1mo", interval="1h")
-        if hist.empty:
-            raise ValueError("No data returned from Yahoo.")
-        hist.reset_index(inplace=True)
-        hist.rename(columns={"index": "Datetime"}, inplace=True)
-        state["ohlcv"] = hist  # Will be serialized by CustomSqliteSaver
-        log_trace(state, "api", f"Fetched {len(hist)} OHLCV rows for {symbol}")
+        file_path = "./AAPL_4h_12mo_extended.csv"
+        start_date = "2024-06-01"
+        end_date = "2025-05-01"
+        df = pd.read_csv(file_path)
+        df["time"] = pd.to_datetime(df["time"])
+        df_filtered = df[(df["time"] >= start_date) & (df["time"] <= end_date)].copy()
+        df_filtered.rename(columns={"time": "Datetime", "open": "Open", "high": "High", "low": "Low",
+                                    "close": "Close", "volume": "Volume"}, inplace=True)
+        df_filtered.reset_index(drop=True, inplace=True)
+        state["ohlcv"] = df_filtered
+        log_trace(state, "api", f"Loaded {len(df_filtered)} rows from CSV for {symbol}")
     except Exception as e:
         state["ohlcv"] = pd.DataFrame()
         state["api_error"] = str(e)
-        log_trace(state, "api", f"Error: {e}")
+        log_trace(state, "api", f"CSV loading error: {e}")
     return state
 
 def analyze_node(state):
@@ -581,7 +543,7 @@ Patterns:
 
 Make a judgment: BULLISH, BEARISH, or NEUTRAL, and explain why.
 """.strip()
-    with open("llm_prompts_log.txt", "a", encoding="utf-8") as f:
+    with open("../llm_prompts_log.txt", "a", encoding="utf-8") as f:
         f.write(f"\n\n[{datetime.now().isoformat()}] SYMBOL: {state['symbol']}\n{prompt}\n")
     result = llm.generate_content(prompt).text.strip()
     state["llm_opinion"] = result
@@ -590,9 +552,6 @@ Make a judgment: BULLISH, BEARISH, or NEUTRAL, and explain why.
 
     save_interaction(prompt, result)
     return state
-
-# conn = sqlite3.connect(":memory:", check_same_thread=False)
-# checkpointer = CustomSqliteSaver(conn)
 
 builder = StateGraph(State)
 
