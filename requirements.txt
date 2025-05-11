@@ -7,3 +7,5 @@ scipy
 numpy
 dotenv
 langchain-groq
+langgraph-checkpoint-sqlite
+orjson

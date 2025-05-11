@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="af195a50-9cfc-4b61-abe5-774dfb7f8b6d" name="Changes" comment="updated triangle pattern node">
-      <change afterPath="$PROJECT_DIR$/readme.md" afterDir="false" />
+    <list default="true" id="af195a50-9cfc-4b61-abe5-774dfb7f8b6d" name="Changes" comment="updated readme file">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -15,6 +15,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "tnikhil-24"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/tnikhil-24/finBot.git",
+    "accountId": "3c93b979-1a57-40f7-881b-ee63cfeaebd5"
+  }
+}]]></component>
   <component name="ProjectColorInfo"><![CDATA[{
   "associatedIndex": 1
 }]]></component>
@@ -133,7 +145,23 @@
       <option name="project" value="LOCAL" />
       <updated>1746773543468</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="updated readme file">
+      <option name="closed" value="true" />
+      <created>1746773927408</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1746773927408</updated>
+    </task>
+    <task id="LOCAL-00009" summary="updated readme file">
+      <option name="closed" value="true" />
+      <created>1746774055232</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1746774055232</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -144,6 +172,7 @@
     <MESSAGE value="updated pennant pattern node" />
     <MESSAGE value="updated flag pattern node" />
     <MESSAGE value="updated triangle pattern node" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated triangle pattern node" />
+    <MESSAGE value="updated readme file" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated readme file" />
   </component>
 </project>
