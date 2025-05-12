@@ -105,9 +105,9 @@ def extract_stock_symbol(user_input: str) -> str:
 def api_node(state):
     symbol = state["symbol"]
     try:
-        file_path = "./AAPL_4h_12mo_extended.csv"
-        start_date = "2024-06-01"
-        end_date = "2025-05-01"
+        file_path = "./AAPL_4h_24mo_extended.csv"
+        start_date = "2023-10-01"
+        end_date = "2024-05-31"
         df = pd.read_csv(file_path)
         df["time"] = pd.to_datetime(df["time"])
         df_filtered = df[(df["time"] >= start_date) & (df["time"] <= end_date)].copy()
@@ -171,46 +171,104 @@ MACD: {latest['MACD']:.2f}, Signal: {latest['MACD_Signal']:.2f} → {'Bullish' i
     log_trace(state, "indicators", "Indicators calculated")
     return state
 
+
+
+
 def double_pattern_detector_node(state):
     persona, role = NODE_PERSONAS["double_pattern_detector"]
     df = state.get("ohlcv")
+
     if df is None or df.empty:
         state["double_pattern_signal"] = "❌ No pattern data"
-        log_trace(state, "double_pattern_detector", f"{persona} - No pattern data")
         return state
 
+    # Increased order to 24 (4 days) for significant peaks only
     prices = df["Close"].values
-    df["local_max"] = df["Close"].iloc[argrelextrema(prices, np.greater_equal, order=3)[0]]
-    df["local_min"] = df["Close"].iloc[argrelextrema(prices, np.less_equal, order=3)[0]]
+    max_idx = argrelextrema(prices, np.greater_equal, order=24)[0]
+    min_idx = argrelextrema(prices, np.less_equal, order=24)[0]
 
-    tops = df.dropna(subset=["local_max"]).tail(3)
-    bottoms = df.dropna(subset=["local_min"]).tail(3)
+    df["local_max"] = np.nan
+    df["local_min"] = np.nan
+    df.loc[max_idx, "local_max"] = df.loc[max_idx, "Close"]
+    df.loc[min_idx, "local_min"] = df.loc[min_idx, "Close"]
+
+    # Get last 5 peaks to scan for historical patterns
+    all_tops = df.dropna(subset=["local_max"])
+    all_bottoms = df.dropna(subset=["local_min"])
     signal = "⚠️ No clear double pattern"
     details = {}
     close = df["Close"].iloc[-1]
 
     try:
-        if len(tops) >= 2:
-            top1, top2 = tops["local_max"].values[-2:]
-            peak_diff = abs(top2 - top1) / top1
-            neckline = df["Close"].iloc[tops.index[-1]+1:].min()
-            if peak_diff < 0.03 and close < neckline:
+        # Scan peak pairs within 60 periods (10 days) of each other
+        for i in range(1, len(all_tops)):
+            peak1 = all_tops.iloc[-i - 1]
+            peak2 = all_tops.iloc[-i]
+
+            if (peak2.name - peak1.name) > 180:  # Max 10 days between peaks
+                continue
+
+            # Calculate pattern metrics
+            top1 = peak1["local_max"]
+            top2 = peak2["local_max"]
+            peak_diff = abs(top2 - top1) / ((top1 + top2) / 2)
+
+            # Find trough between peaks (true neckline)
+            trough = df["Close"].iloc[peak1.name:peak2.name].min()
+
+            # 5% tolerance and current price below neckline
+            if peak_diff < 0.05 and close < trough:
                 signal = "📉 Double Top → Bearish"
-                details = {"top1": top1, "top2": top2, "neckline": neckline, "close": close}
-        if len(bottoms) >= 2:
-            bot1, bot2 = bottoms["local_min"].values[-2:]
-            bottom_diff = abs(bot2 - bot1) / bot1
-            neckline = df["Close"].iloc[bottoms.index[-1]+1:].max()
-            if bottom_diff < 0.03 and close > neckline:
-                signal = "📈 Double Bottom → Bullish"
-                details = {"bot1": bot1, "bot2": bot2, "neckline": neckline, "close": close}
-    except:
-        pass
+                details = {
+                    "top1": top1,
+                    "top2": top2,
+                    "neckline": trough,
+                    "peak_dates": [
+                        df.iloc[peak1.name]["Datetime"].strftime("%Y-%m-%d"),
+                        df.iloc[peak2.name]["Datetime"].strftime("%Y-%m-%d")
+                    ],
+                    "confirmation_date": df.iloc[-1]["Datetime"].strftime("%Y-%m-%d")
+                }
+                break
+
+            for i in range(1, len(all_bottoms)):
+                trough1 = all_tops.iloc[-i - 1]
+                trough2 = all_tops.iloc[-i]
+
+                if (trough2.name - trough1.name) > 60:  # Max 10 days between peaks
+                    continue
+
+                # Calculate pattern metrics
+                bottom1 = trough1["local_min"]
+                bottom2 = trough2["local_min"]
+                trough_diff = abs(bottom2 - bottom1) / ((bottom1 + bottom2) / 2)
+
+                # Find trough between peaks (true neckline)
+                neckline = df["Close"].iloc[trough1.name:trough2.name].max()
+
+                # 5% tolerance and current price below neckline
+                if trough_diff < 0.05 and close > neckline:
+                    signal = "📈 Double Bottom → Bullish"
+                    details = {
+                        "bottom1": bottom1,
+                        "bottom2": bottom2,
+                        "neckline": neckline,
+                        "trough_dates": [
+                            df.iloc[trough1.name]["Datetime"].strftime("%Y-%m-%d"),
+                            df.iloc[trough2.name]["Datetime"].strftime("%Y-%m-%d")
+                        ],
+                        "confirmation_date": df.iloc[-1]["Datetime"].strftime("%Y-%m-%d")
+                    }
+                    break
+
+    except Exception as e:
+        print(f"Pattern detection error: {str(e)}")
 
     state["double_pattern_signal"] = signal
     state["double_pattern_details"] = details
     log_trace(state, "double_pattern_detector", f"{persona} {signal} | {details}")
     return state
+
 
 def triple_pattern_detector_node(state):
     persona, role = NODE_PERSONAS["triple_pattern_detector"]

@@ -1,0 +1,187 @@
+file_path = "./AAPL_4h_24mo_extended.csv"
+start_date = "2023-12-01"
+end_date = "2024-04-01"
+
+# Code
+def double_pattern_detector_node(state):
+    persona, role = NODE_PERSONAS["double_pattern_detector"]
+    df = state.get("ohlcv")
+
+    if df is None or df.empty:
+        state["double_pattern_signal"] = "❌ No pattern data"
+        return state
+
+    # Increased order to 24 (4 days) for significant peaks only
+    prices = df["Close"].values
+    max_idx = argrelextrema(prices, np.greater_equal, order=24)[0]
+    min_idx = argrelextrema(prices, np.less_equal, order=24)[0]
+
+    df["local_max"] = np.nan
+    df["local_min"] = np.nan
+    df.loc[max_idx, "local_max"] = df.loc[max_idx, "Close"]
+    df.loc[min_idx, "local_min"] = df.loc[min_idx, "Close"]
+
+    # Get last 5 peaks to scan for historical patterns
+    all_tops = df.dropna(subset=["local_max"])
+    all_bottoms = df.dropna(subset=["local_min"])
+    signal = "⚠️ No clear double pattern"
+    details = {}
+    close = df["Close"].iloc[-1]
+
+    try:
+        # Scan peak pairs within 60 periods (10 days) of each other
+        for i in range(1, len(all_tops)):
+            peak1 = all_tops.iloc[-i - 1]
+            peak2 = all_tops.iloc[-i]
+
+            if (peak2.name - peak1.name) > 60:  # Max 10 days between peaks
+                continue
+
+            # Calculate pattern metrics
+            top1 = peak1["local_max"]
+            top2 = peak2["local_max"]
+            peak_diff = abs(top2 - top1) / ((top1 + top2) / 2)
+
+            # Find trough between peaks (true neckline)
+            trough = df["Close"].iloc[peak1.name:peak2.name].min()
+
+            # 5% tolerance and current price below neckline
+            if peak_diff < 0.05 and close < trough:
+                signal = "📉 Double Top → Bearish"
+                details = {
+                    "top1": top1,
+                    "top2": top2,
+                    "neckline": trough,
+                    "peak_dates": [
+                        df.iloc[peak1.name]["Datetime"].strftime("%Y-%m-%d"),
+                        df.iloc[peak2.name]["Datetime"].strftime("%Y-%m-%d")
+                    ],
+                    "confirmation_date": df.iloc[-1]["Datetime"].strftime("%Y-%m-%d")
+                }
+                break
+
+            for i in range(1, len(all_bottoms)):
+                trough1 = all_tops.iloc[-i - 1]
+                trough2 = all_tops.iloc[-i]
+
+                if (trough2.name - trough1.name) > 60:  # Max 10 days between peaks
+                    continue
+
+                # Calculate pattern metrics
+                bottom1 = trough1["local_min"]
+                bottom2 = trough2["local_min"]
+                trough_diff = abs(bottom2 - bottom1) / ((bottom1 + bottom2) / 2)
+
+                # Find trough between peaks (true neckline)
+                neckline = df["Close"].iloc[trough1.name:trough2.name].max()
+
+                # 5% tolerance and current price below neckline
+                if trough_diff < 0.05 and close > neckline:
+                    signal = "📈 Double Bottom → Bullish"
+                    details = {
+                        "bottom1": bottom1,
+                        "bottom2": bottom2,
+                        "neckline": neckline,
+                        "trough_dates": [
+                            df.iloc[trough1.name]["Datetime"].strftime("%Y-%m-%d"),
+                            df.iloc[trough2.name]["Datetime"].strftime("%Y-%m-%d")
+                        ],
+                        "confirmation_date": df.iloc[-1]["Datetime"].strftime("%Y-%m-%d")
+                    }
+                    break
+
+    except Exception as e:
+        print(f"Pattern detection error: {str(e)}")
+
+    state["double_pattern_signal"] = signal
+    state["double_pattern_details"] = details
+    log_trace(state, "double_pattern_detector", f"{persona} {signal} | {details}")
+    return state
+
+# Output
+D:\Projects\finBot\.venv\Scripts\python.exe D:\Projects\finBot\fetching\finAgent.py
+💬 Ask about a stock (e.g., 'Tell me about TSLA') or type 'exit'.
+You: Tell me about AAPL
+Pattern detection error: 'int' object has no attribute 'strftime'
+
+✅ Market Direction:
+Judgment: **NEUTRAL (leaning slightly bearish)**
+
+Explanation:
+
+While a Falling Wedge pattern is generally considered bullish, the other indicators and recent price action for AAPL suggest a more neutral stance with a slight bearish lean.  Here's a breakdown:
+
+* **Falling Wedge:** This pattern is indeed present and suggests a potential upside breakout. However, confirmation of this breakout is crucial, meaning a decisive move above the upper trendline of the wedge with increased volume is needed.  Without this confirmation, it remains a potential, not a confirmed bullish signal.
+
+* **Double Top:** The presence of a Double Top formation is a significant bearish signal. This indicates a potential resistance level that price has failed to break through twice, suggesting a possible reversal.
+
+* **MACD:** The MACD is currently negative but has been showing signs of recovering.  While this isn't strongly bearish, it doesn't provide a strong bullish argument either, especially given the relatively slow pace of recovery. A bullish crossover of the MACD line over the signal line would be a more positive indicator.
+
+* **RSI:** The RSI has been fluctuating within a relatively neutral range.  It's not currently in overbought territory, nor is it deeply oversold. This suggests a lack of strong momentum in either direction.
+
+* **Price Action:** Recent price action has been volatile.  While there have been periods of upward movement, these haven't been sustained, and the price has pulled back each time. This choppiness reflects uncertainty in the market regarding AAPL. The inability to break through recent highs reinforces the bearish implications of the Double Top pattern.
+
+* **VWAP:** The current price is significantly below the Volume Weighted Average Price (VWAP). This suggests that, on average, the stock is currently undervalued compared to its recent trading history.  However, this alone is not enough to confirm a bullish reversal, especially considering the other indicators.
+
+**Conclusion:**
+
+The Falling Wedge offers some hope for a bullish move. However, the Double Top, coupled with the volatile and somewhat choppy price action and the lack of strong confirmation from other indicators like the MACD and RSI, tempers this bullish outlook. For now, a neutral stance is most appropriate, with a slight bearish lean due to the presence of the Double Top and the lack of decisive upside momentum. Further observation is needed to see if the price can break out of the wedge with conviction or if the bearish implications of the Double Top prevail.
+
+📜 Trace:
+- api (📊 Data Curator | Financial data acquisition specialist) @ 2025-05-11T20:59:48.128749
+  📋 Loaded 324 rows from CSV for AAPL
+
+- analyze (📈 Trend Analyst | Price movement pattern expert) @ 2025-05-11T20:59:48.138300
+  📋 📈 Trend Analyst 5-hour trend: ↓ (172.09 → 170.41)
+
+- indicators (📉 Indicator Specialist | Technical indicator maestro) @ 2025-05-11T20:59:48.145305
+  📋 Indicators calculated
+
+- double_pattern_detector (🔍 Double Pattern Expert | Double top/bottom authority) @ 2025-05-11T20:59:48.151290
+  📋 🔍 Double Pattern Expert 📉 Double Top → Bearish | {}
+
+- triple_pattern_detector (🔍 Triple Pattern Expert | Triple formation specialist) @ 2025-05-11T20:59:48.155293
+  📋 🔍 Triple Pattern Expert ⚠️ No triple pattern | {}
+
+- hs_pattern_detector (👤 Head & Shoulders Analyst | Reversal pattern diagnostician) @ 2025-05-11T20:59:48.157297
+  📋 👤 Head & Shoulders Analyst ⚠️ No head & shoulders pattern | {}
+
+- wedge_pattern_detector (🔻 Wedge Pattern Analyst | Consolidation pattern expert) @ 2025-05-11T20:59:48.158290
+  📋 🔻 Wedge Pattern Analyst 📈 Falling Wedge → Bullish | {'top_slope': np.float64(-0.05443588955582229), 'bot_slope': np.float64(-0.029776278511403236), 'type': 'falling', 'close': np.float64(170.4052)}
+
+- pennant_pattern_detector (🚩 Pennant Pattern Analyst | Continuation pattern specialist) @ 2025-05-11T20:59:48.158290
+  📋 🚩 Pennant Pattern Analyst ⚠️ No clear pennant pattern | {}
+
+- flag_pattern_detector (🏁 Flag Pattern Analyst | Trend continuation expert) @ 2025-05-11T20:59:48.159296
+  📋 🏁 Flag Pattern Analyst ⚠️ No flag pattern detected | {}
+
+- triangle_pattern_detector (🔺 Triangle Pattern Analyst | Symmetrical pattern detector) @ 2025-05-11T20:59:48.159296
+  📋 🔺 Triangle Pattern Analyst ⚠️ No clear triangle pattern | {}
+
+- llm_reason (🤖 LLM Market Strategist | AI-powered market analysis synthesizer) @ 2025-05-11T20:59:59.578634
+  📋 🤖 LLM Market Strategist LLM result: Judgment: **NEUTRAL (leaning slightly bearish)**
+
+Explanation:
+
+While a Falling Wedge pattern is generally considered bullish, the other indicators and recent price action for AAPL suggest a more neutral stance with a slight bearish lean.  Here's a breakdown:
+
+* **Falling Wedge:** This pattern is indeed present and suggests a potential upside breakout. However, confirmation of this breakout is crucial, meaning a decisive move above the upper trendline of the wedge with increased volume is needed.  Without this confirmation, it remains a potential, not a confirmed bullish signal.
+
+* **Double Top:** The presence of a Double Top formation is a significant bearish signal. This indicates a potential resistance level that price has failed to break through twice, suggesting a possible reversal.
+
+* **MACD:** The MACD is currently negative but has been showing signs of recovering.  While this isn't strongly bearish, it doesn't provide a strong bullish argument either, especially given the relatively slow pace of recovery. A bullish crossover of the MACD line over the signal line would be a more positive indicator.
+
+* **RSI:** The RSI has been fluctuating within a relatively neutral range.  It's not currently in overbought territory, nor is it deeply oversold. This suggests a lack of strong momentum in either direction.
+
+* **Price Action:** Recent price action has been volatile.  While there have been periods of upward movement, these haven't been sustained, and the price has pulled back each time. This choppiness reflects uncertainty in the market regarding AAPL. The inability to break through recent highs reinforces the bearish implications of the Double Top pattern.
+
+* **VWAP:** The current price is significantly below the Volume Weighted Average Price (VWAP). This suggests that, on average, the stock is currently undervalued compared to its recent trading history.  However, this alone is not enough to confirm a bullish reversal, especially considering the other indicators.
+
+**Conclusion:**
+
+The Falling Wedge offers some hope for a bullish move. However, the Double Top, coupled with the volatile and somewhat choppy price action and the lack of strong confirmation from other indicators like the MACD and RSI, tempers this bullish outlook. For now, a neutral stance is most appropriate, with a slight bearish lean due to the presence of the Double Top and the lack of decisive upside momentum. Further observation is needed to see if the price can break out of the wedge with conviction or if the bearish implications of the Double Top prevail.
+
+You:
+
+
+
